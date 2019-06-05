@@ -1,0 +1,147 @@
+#include <SoftwareSerial.h>
+SoftwareSerial BTserial(10, 9);  // Rx/Tx
+char c=' ';   
+//boolean NL = true; 
+
+int ledsw420 = 2;
+int pirled = 3;
+int buzzer = 4;
+int sw420 = 12;
+int pir = 13;
+          
+void setup() {
+  Serial.begin(9600);
+  Serial.print("Uploaded: ");   Serial.println(__DATE__); 
+  Serial.println(" ");
+  BTserial.begin(9600);
+   Serial.println(hm10_at("AT+RENEW",5000));
+  Serial.println(hm10_at("AT+NAME720AAAA",50));
+  Serial.println("Set BT Mode:"+setmode(0));
+  Serial.println("My MAC:"+getmac());  //gets MAC address
+pinMode(ledsw420, OUTPUT);
+pinMode(pirled, OUTPUT);
+pinMode(buzzer, OUTPUT);
+pinMode(sw420, INPUT);
+pinMode(pir, INPUT);
+}
+
+void loop() {
+  getsw420(1000);
+  getpirled(1000);  
+}
+
+String getbleResponse(int timeout)
+{
+  String str="";  //store the received response as a string
+  char c;  //store the received response as a character
+  unsigned long t=millis();
+    while(millis()<(t+timeout))
+    {
+      if (BTserial.available()) 
+      {
+        c=BTserial.read();
+        str.concat(c);
+      }
+    }     
+    str.trim();
+       
+  return str;
+  }
+String setmode(int mode)    //mode 0: slave, mode 1: master
+{
+   BTserial.println("AT+ROLE"+String(mode));
+    BTserial.flush();
+    String str = getbleResponse(1000);
+  if(str.indexOf("+ROLE")!=-1)
+  {
+    return str;
+    }else{
+      return "connected fail";}
+  }
+String getmac()    //mode 0: slave, mode 1: master
+{
+   BTserial.println("AT+LADDR");
+    BTserial.flush();
+    String str = getbleResponse(1000);
+  if(str.indexOf("+LADDR")!=-1)
+  {
+    return str;
+    }else{
+      return "connected fail";}
+  }
+
+void getsw420(int timeinterval)
+{
+  int mearunt = 0;
+  unsigned long t=millis();
+  while(millis()<(t+timeinterval))
+    { 
+      if (digitalRead(sw420)==HIGH) 
+      {
+        mearunt++;       
+      }
+    }
+    if(mearunt>1000)
+    {
+      digitalWrite(ledsw420,HIGH);
+      digitalWrite(buzzer,HIGH);
+     Serial.println("Warning!!");
+      hm10senddata("Warning!!");
+      }
+      else
+      {
+        digitalWrite(ledsw420,LOW);
+        digitalWrite(buzzer,LOW);
+        }
+}
+void getpirled(int timeinterval)
+{
+  int mearunt = 0;
+  unsigned long t=millis();
+  while(millis()<(t+timeinterval))
+    {
+      if (digitalRead(pir)==HIGH) 
+      {
+        mearunt++;
+      }
+    }
+    if(mearunt>30)
+    {
+      digitalWrite(pirled,HIGH);
+      Serial.println("Someone's there!!");
+      hm10senddata("Someone's there!!");
+      }
+      else
+      {
+        digitalWrite(pirled,LOW);
+        }
+}
+
+String hm10_response()
+{
+  String str="";  //
+  char c;  //
+  
+  while (BTserial.available()) {  //get number of bytes/characters available from serial port
+    c=BTserial.read();  //Must be placed in a variable declared as char (will be converted into a character)
+    str.concat(c);  //concatenates the response
+    delay(10);  //ensures delay, otherwise it will be too fast
+    }
+  str.trim();  //removes head and tail blank characters
+  return str; 
+  }
+String hm10_at(String at,int delaytime)
+{
+  Serial.println(at);
+  BTserial.print(at);  
+  BTserial.flush();  
+  delay(delaytime);
+  String str = hm10_response();
+  return str;
+  }
+void hm10senddata(String data)
+{
+  
+  BTserial.println(data);
+  BTserial.flush();
+  }

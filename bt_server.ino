@@ -1,0 +1,316 @@
+  #include <SoftwareSerial.h>
+  
+  SoftwareSerial esp8266(4,5);
+  SoftwareSerial bluetooth(10, 9);
+
+  String macAddress = "9884E32D71F3";
+  
+  int arraysdays[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
+  String allmonth[12] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+  String myear = "",mmon="",mdays="",mtime = "",mhour = "",mmmin  = "",mmmmins  = "";
+  int year = 0;
+  int mon = 0;
+  int days = 0;
+  int hour = 0;
+  int mmin = 0;
+  int mmins = 0;
+  int gmt=8;
+  unsigned long timeinterval = 1000;
+  unsigned long nowtime = 0;
+  unsigned long time = 0;
+  String  timme= ""; 
+
+  // Esp8266 configuration of connection
+  String ssid = "HITRON-D3B0";
+  String pwd = "H32ZT6R6PQ62";
+  String address = "192.168.50.110";
+  int port = 8000;
+  int link = 0;
+ 
+  
+void setup() {
+  Serial.begin(9600);
+  esp8266.begin(115200); 
+  esp8266.write("AT+UART_DEF=9600,8,1,0,0\r\n");
+  esp8266.begin(9600);
+  
+  Serial.println("SDK version");
+  Serial.println(sendCommand(&esp8266, "AT+GMR", 500));
+  Serial.println("Mode");
+  Serial.println(sendCommand(&esp8266, "AT+CWMODE=1", 500)); 
+  Serial.println("AP Dissconnect");
+  Serial.println(sendCommand(&esp8266, "AT+CWQAP", 500));
+  Serial.println("Join Ap");
+  Serial.println(sendCommand(&esp8266, "AT+CWJAP=\"" + ssid + "\",\"" + pwd + "\"", 5000));
+  Serial.println("IP");
+  Serial.println(sendCommand(&esp8266, "AT+CIFSR", 1000));
+  // Server setting
+  Serial.println("RST");
+  Serial.println(sendCommand(&esp8266, "AT+RST", 2000));
+  Serial.println("Cipmux:");
+  Serial.println(sendCommand(&esp8266, "AT+CIPMUX=1", 1000));
+  Serial.println("Setport:");
+  Serial.println(sendCommand(&esp8266, "AT+CIPSERVER=1," + String(port), 1000));
+  Serial.println("IP:");
+  Serial.println(sendCommand(&esp8266, "AT+CIFSR", 1000)); 
+  Serial.println("connect google time:");
+  Serial.println(sendCommand(&esp8266, tcpConnect(0, "www.google.com", 80), 1500));
+  Serial.println("Current DATE:" + sendProcessAndGetTime(&esp8266, 0,"GET /"));
+  Serial.println(isodate(timme));
+  
+  bluetooth.begin(9600);
+  // Set configuration of bluetooth
+  Serial.println(sendCommand(&bluetooth, "AT+RENEW", 3000));
+  Serial.println("Set by mode");
+  Serial.println(sendCommand(&bluetooth, "AT+ROLE1", 1000));
+  Serial.println("My Mac address");
+  Serial.println(getMacAddress(&bluetooth, 1000));
+  Serial.println("Scan device");
+  Serial.println(scanDevice(&bluetooth, 1000));  
+  Serial.println("Connect mac address");
+  Serial.println(sendCommand(&bluetooth, "AT+CONA" + macAddress, 1500));
+  
+}
+
+  void loop() {
+     // put your main code here, to run repeatedly:
+     renew();
+     
+     if (bluetooth.available()) {  
+       //if the serial port RX receives a response character from ESP8266
+       Serial.println(getResponse(&bluetooth, 1500));
+       Serial.println("Current time " + timme); 
+       delay(2000);
+     }
+     
+     if (Serial.available()) {  
+       //if the serial port RX receives an AT command character from the PC (USB TX)
+       esp8266.write(Serial.read());  //pass the characters from the PC to the ESP8266
+     }
+  }
+  
+  String tcpConnect(byte link, String address, int port) {
+    return "AT+CIPSTART=" + String(link)+",\"TCP\",\"" + address + "\"," + String(port); 
+  }
+      
+  String getMacAddress(SoftwareSerial* driver, int timeout) {
+     String result = sendCommand(driver, "AT+LADDR", timeout);      
+     return result.indexOf("LADDR") > -1 ? result : "Connected failure";
+  }
+     
+  String scanDevice(SoftwareSerial* driver, int timeout) {
+     String result = sendCommand(driver, "AT+INQ", timeout);
+     return result.indexOf("OK") > -1 ? result : "AT failure";
+  }
+  
+  String sendCommand(SoftwareSerial *driver, String command, int delayTime) {
+    driver->println(command);
+    driver->flush();
+    delay(delayTime);
+     
+    return getResponse(driver, 1000);
+  }
+  
+  String getResponse(SoftwareSerial* driver, int timeout) {
+      String result = "";
+      char c;
+      unsigned long currentTime = millis();
+      
+      while(currentTime + timeout > millis()) {
+          if (driver->available()) {
+            c = driver->read();
+            result.concat(c);           
+          }
+      }
+      
+      result.trim();
+      return result;
+  }
+  
+  String sendProcessAndGetTime(SoftwareSerial* driver, byte link, String url) {
+    url += "\r\n";
+    String result = sendCommand(driver, "AT+CIPSEND="+String(link)+","+ String(url.length()), 1000);
+    delay(1000);
+    Serial.println(result);
+    
+    if (result.indexOf(">") == -1) {
+      return closeTcpConnection(driver, 0);
+    }
+    
+    driver->println(url);
+    driver->flush();
+    result = getResponse(driver, 3000);
+
+    Serial.println(result);
+    
+    if (result.indexOf("+IPD") == -1) {
+      return closeTcpConnection(driver, 0);
+    }
+
+    closeTcpConnection(driver, 0);
+    timme = result.substring(result.indexOf("Date:") + 6, result.indexOf("GMT"));
+    return result.substring(result.indexOf("Date:") + 11, result.indexOf("GMT"));
+  }
+
+  String closeTcpConnection(SoftwareSerial* driver, byte port) {
+      String result = sendCommand(driver, "AT+CIPCLOSE=" + String(port), 1000);
+      return result.indexOf("OK") > -1 ? "Close tcp connection" : "Close failure";
+  }
+  
+ 
+void renew()
+{
+   if(millis()>(nowtime+timeinterval))
+    {
+      mmins = mmins+1;
+      nowtime = millis();
+      timme = processrenew();
+//      Serial.println(timme);
+      }
+  }
+String processrenew()
+{
+  if(mmins>=60)
+  {
+    mmins=0;
+    mmin+=1;
+  }
+    
+  if(mmin>=60)
+  {
+    mmin=0;
+    hour+=1;
+  }
+  else if(hour>=24) {
+    hour=0;
+    days+=1;
+  }
+    int monss = mon-1;
+     if(days>=arraysdays[monss]&&decideleapyear(year))
+   {
+    days=1;
+    year+=1;
+    }
+     if(mon==2&&decideleapyear(year))
+    {
+      if(days==28)
+      {
+        days+=1;
+        }
+        else if(days==29)
+        {
+          days=1;
+          year+=1;
+          }
+     }
+     if(days >= arraysdays[monss]&&decideleapyear(year)==false)
+     {
+      days=1;
+    year+=1;
+      }
+       else if(mon>=12)
+     {
+      mon=1;
+    year+=1;
+      }
+     
+  mmmmins = String(mmins);
+  mmmin =  String(mmin);
+  mhour = String(hour);
+  mdays = String(days);
+  mmon = String(mmins);
+  myear = String(year);
+  
+  checkiso();
+  String iso = myear+"-" + mmon+"-" + mdays +"T"+ mhour+":"+ mmmin+":"+ mmmmins+"+08:00";
+  return iso;
+}
+
+
+void checkiso()
+{
+  
+   if(mon<10)
+   {
+    mmon = "0"+String(mon);
+    }
+      else if(days<10)
+   {
+    mdays = "0"+String(days);
+    }
+      if(hour<10)
+   {
+    mhour = "0"+String(hour);
+    }
+      if(mmin <10)
+   {
+    mmmin = "0"+String(mmin);
+    }
+      if(mmins < 10)
+    {
+      mmmmins = "0"+String(mmins);
+    }
+  }
+String isodate(String date) 
+{  
+   myear = myear+date.substring(12,16);   
+   mmon = mmon+date.substring(7,11);   
+   mmon.trim();
+   mdays = date.substring(5,7);
+   mon = processmonth(mmon);
+   days = mdays.toInt();
+   mtime = mtime + date.substring(17);
+   mhour = mtime.substring(0,2);
+   mmmin = mtime.substring(3,5);
+   mmmmins = mtime.substring(6,8);
+   year = myear.toInt();
+   days = mdays.toInt();
+   hour = mhour.toInt();
+   if(hour<=16)
+   {
+    hour+=gmt;
+    }
+   else
+   {
+    hour=hour+gmt-24;
+    days+=1;
+    }
+   mmin = mmmin.toInt();
+   mmins = mmmmins.toInt();
+   checkiso();
+  String iso = myear+"-" + mmon+"-" + mdays +"T"+ String(hour)+":"+ mmmin+":"+ mmmmins+"+08:00";
+  return iso;
+  }
+ 
+
+boolean decideleapyear(int year)
+{
+  if((year%4==0)&&((year%100)!=0)||(year%400==0))
+  {
+    return true;
+    }
+    else
+    {
+      return false;
+      }
+  }
+
+
+int processmonth(String month)
+{
+  String allmonth[12] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+  int mmon = 0;
+  for(int i = 0; i < 12;i++)
+  {
+    if(allmonth[i].equals(month))
+    {
+      mmon=i+1;
+      break;
+      
+      }
+    }
+    return mmon; 
+  }
+
+
+  
